@@ -2,7 +2,7 @@ using System.IO;
 
 public class FileWriter
 {
-    public static void CopyImage(string sourcePath, string destinationPath)
+    public static void Copy(string sourcePath, string destinationPath)
     {
         var fileExists = File.Exists(sourcePath);
         if (!fileExists)
@@ -22,6 +22,13 @@ public class FileWriter
             newFilePathWithoutExtension += $" ({existsIteration})";
         }
         var newFilePath = newFilePathWithoutExtension + Path.GetExtension(destinationPath);
+
+        var newFileDirectory = newFilePath.Split(Path.GetFileName(newFilePath))[0];
+        var directoryExists = Directory.Exists(newFileDirectory);
+        if (!directoryExists)
+        {
+            Directory.CreateDirectory(newFileDirectory);
+        }
 
         File.Copy(sourcePath, newFilePath);
     }

@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.Json;
 
 public class FacebookCopier : IFacebookCopier
 {
+    public int CopiedPhotos { get; private set; } = 0;
+    public int CopiedVideos { get; private set; } = 0;
     private string rootPath;
     private string photoTargetPath;
     private static string[] relativeActivityPaths = new string[] { @"your_activity_across_facebook\", @"your_facebook_activity\" };
@@ -25,7 +25,9 @@ public class FacebookCopier : IFacebookCopier
         Helpers.GetOrCreateEmptyDirectory(photoTargetPath);
     }
 
-    public void CopyPhotos()
+
+
+    public void Copy()
     {
         Console.Output("Reading chat folders");
         var chats = FileReader.GetDirectories(rootPath, relativeActivityPaths, relativeChatFolderPaths);
@@ -35,7 +37,7 @@ public class FacebookCopier : IFacebookCopier
         Console.Output($"0% Completed (0 out of {numberOfChats})");
         for (int i = 0; i < numberOfChats; i++)
         {
-            CopyPhotosFromChat(chats.ElementAt(i));
+            CopyFromChat(chats.ElementAt(i));
             
             var percentCompleted = (i + 1) / numberOfChats * 100;
             if (percentCompleted % 10 == 0)
@@ -45,33 +47,30 @@ public class FacebookCopier : IFacebookCopier
         }
     }
 
-    private void CopyPhotosFromChat(string chatDir)
+    private void CopyFromChat(string chatDir)
     {
         var chatJsonFiles = Directory.GetFiles(chatDir, "*.json", SearchOption.AllDirectories);
         foreach (var chatJsonFile in chatJsonFiles)
         {
-            CopyPhotosFromChatJsonFile(chatJsonFile);
+            CopyFromChatJsonFile(chatJsonFile);
         }
     }
 
-    private void CopyPhotosFromChatJsonFile(string chatJsonFilePath)
+    private void CopyFromChatJsonFile(string chatJsonFilePath)
     {
         var chatJsonString = File.ReadAllText(chatJsonFilePath);
         var chatJson = JsonSerializer.Deserialize<ChatFile>(chatJsonString);
 
-        if (chatJson.Image == null)
+        var chatPhoto = chatJson.Image;
+        if (chatPhoto != null)
         {
-            return;
+            CopyFile(chatPhoto);
+            CopiedPhotos++;
         }
 
-        var fileUri = rootPath + chatJson.Image.URI.Replace("/", "\\");
-        var fileExists = File.Exists(fileUri);
-        if (!fileExists)
-        {
-            throw new FileNotFoundException("File does not exist");
-        }
 
         CopyChatPhotos(chatJson.Messages);
+        CopyChatVideos(chatJson.Messages);
     }
 
     private void CopyChatPhotos(ICollection<ChatEntry> chatEntries)
@@ -90,15 +89,79 @@ public class FacebookCopier : IFacebookCopier
                 {
                     continue;
                 }
-
-                var photoPath = rootPath + chatPhoto.URI.Replace("/", "\\");
-                var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(chatPhoto.CreateTimestamp).LocalDateTime;
-                var newFileName = dateTimeCreated.ToString("yyyy-MM-dd");
-                var newFilePath = photoTargetPath + newFileName + " (Facebook)" + Path.GetExtension(photoPath);
-                FileWriter.CopyImage(photoPath, newFilePath);
-                File.SetCreationTime(newFilePath, DateTime.Now);
-                File.SetLastWriteTime(newFilePath, dateTimeCreated);
+                CopyFile(chatPhoto);
+                CopiedPhotos++;
             }
         }
+    }
+
+    private void CopyChatVideos(ICollection<ChatEntry> chatEntries)
+    {
+        foreach(var chatEntry in chatEntries)
+        {
+            var videos = chatEntry.Videos;
+            if (videos == null || videos.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var video in videos)
+            {
+                CopyFile(video);
+                CopiedVideos++;
+            }
+        }
+    }
+
+    private void CopyFile(ILocatedFile file)
+    {
+        // Ensure file is not using a Cached file (stored on Facebook CDN servers)
+        if (!IsLocalFile(file.URI))
+        {
+            return;
+        }
+
+        // If file is missing an extension: add one on based on the type passed in
+        var fileUri = file.URI.Replace("/", "\\");
+        var photoPath = rootPath + fileUri;
+        var photoPathExtension = Path.GetExtension(photoPath);
+        if (string.IsNullOrEmpty(photoPathExtension))
+        {
+            var type = file.GetType().ToString();
+            switch (type)
+            {
+                case "Video":
+                    photoPathExtension = ".mp4";
+                    break;
+                case "Photo":
+                    photoPathExtension = ".jpg";
+                    break;
+            }
+        }
+        
+        var newFilePath = GetCopiedFileTargetPath(file.CreateTimestamp, photoPathExtension);
+        FileWriter.Copy(photoPath, newFilePath);
+        
+        var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(file.CreateTimestamp).LocalDateTime;
+        File.SetCreationTime(newFilePath, dateTimeCreated);
+        File.SetLastWriteTime(newFilePath, DateTime.Now);
+        CopiedVideos++;
+    }
+
+    private bool IsLocalFile (string fileUri)
+    {
+        return !fileUri.StartsWith("https");
+    }
+
+    private string GetCopiedFileTargetPath(long createTimestamp_s, string fileType)
+    {
+        var newFilePath = photoTargetPath;
+
+        var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(createTimestamp_s).LocalDateTime;
+        newFilePath += dateTimeCreated.ToString("yyyy") + "\\";
+
+        newFilePath += dateTimeCreated.ToString("yyyy-MM-dd");
+
+        return newFilePath + " (Facebook)" + fileType;
     }
 }

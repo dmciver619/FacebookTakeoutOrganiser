@@ -20,6 +20,9 @@ public class ChatEntry
 
     [JsonPropertyName("photos")]
     public List<Photo> Photos { get; set; }
+
+    [JsonPropertyName("videos")]
+    public List<Video> Videos { get; set; }
     
     [JsonPropertyName("stickers")]
     public List<Sticker> Stickers { get; set; }

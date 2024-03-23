@@ -10,7 +10,9 @@ namespace MyApp
             var targetUri = GetTargetUriFromUser();
 
             var facebookCopier = new FacebookCopier(rootUri, targetUri);
-            facebookCopier.CopyPhotos();
+            facebookCopier.Copy();
+
+            Console.Output($"{facebookCopier.CopiedPhotos} photos and {facebookCopier.CopiedVideos} videos copied");
         }
 
         private static string GetRootUriFromUser()

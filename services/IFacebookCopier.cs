@@ -1,4 +1,4 @@
 public interface IFacebookCopier
 {
-    void CopyPhotos();
+    void Copy();
 }
