@@ -21,6 +21,12 @@ public class ChatEntry
     [JsonPropertyName("photos")]
     public List<Photo> Photos { get; set; }
 
+    [JsonPropertyName("audio_files")]
+    public List<Audio> Audio { get; set; }
+
+    [JsonPropertyName("files")]
+    public List<File> Files { get; set; }
+
     [JsonPropertyName("videos")]
     public List<Video> Videos { get; set; }
     

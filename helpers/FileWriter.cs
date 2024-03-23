@@ -4,7 +4,7 @@ public class FileWriter
 {
     public static void Copy(string sourcePath, string destinationPath)
     {
-        var fileExists = File.Exists(sourcePath);
+        var fileExists = System.IO.File.Exists(sourcePath);
         if (!fileExists)
         {
             throw new FileNotFoundException("File does not exist");
@@ -12,10 +12,10 @@ public class FileWriter
 
         var fileType = Path.GetExtension(destinationPath);
         var newFilePathWithoutExtension = destinationPath.Replace(fileType, "");
-        if (File.Exists(destinationPath))
+        if (System.IO.File.Exists(destinationPath))
         {
             var existsIteration = 1;
-            while (File.Exists(newFilePathWithoutExtension + $" ({existsIteration})" + fileType))
+            while (System.IO.File.Exists(newFilePathWithoutExtension + $" ({existsIteration})" + fileType))
             {
                 existsIteration++;
             }
@@ -30,6 +30,6 @@ public class FileWriter
             Directory.CreateDirectory(newFileDirectory);
         }
 
-        File.Copy(sourcePath, newFilePath);
+        System.IO.File.Copy(sourcePath, newFilePath);
     }
 }

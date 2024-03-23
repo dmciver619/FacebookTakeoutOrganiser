@@ -6,6 +6,8 @@ using System.Text.Json;
 
 public class FacebookCopier : IFacebookCopier
 {
+    public int CopiedAudio { get; private set; } = 0;
+    public int CopiedFiles { get; private set; } = 0;
     public int CopiedPhotos { get; private set; } = 0;
     public int CopiedVideos { get; private set; } = 0;
     private string rootPath;
@@ -28,6 +30,11 @@ public class FacebookCopier : IFacebookCopier
 
 
     public void Copy()
+    {
+        CopyChatMedia();
+    }
+
+    private void CopyChatMedia()
     {
         Console.Output("Reading chat folders");
         var chats = FileReader.GetDirectories(rootPath, relativeActivityPaths, relativeChatFolderPaths);
@@ -58,7 +65,7 @@ public class FacebookCopier : IFacebookCopier
 
     private void CopyFromChatJsonFile(string chatJsonFilePath)
     {
-        var chatJsonString = File.ReadAllText(chatJsonFilePath);
+        var chatJsonString = System.IO.File.ReadAllText(chatJsonFilePath);
         var chatJson = JsonSerializer.Deserialize<ChatFile>(chatJsonString);
 
         var chatPhoto = chatJson.Image;
@@ -71,6 +78,8 @@ public class FacebookCopier : IFacebookCopier
 
         CopyChatPhotos(chatJson.Messages);
         CopyChatVideos(chatJson.Messages);
+        CopyChatAudio(chatJson.Messages);
+        CopyChatFiles(chatJson.Messages);
     }
 
     private void CopyChatPhotos(ICollection<ChatEntry> chatEntries)
@@ -113,6 +122,42 @@ public class FacebookCopier : IFacebookCopier
         }
     }
 
+    private void CopyChatAudio(ICollection<ChatEntry> chatEntries)
+    {
+        foreach(var chatEntry in chatEntries)
+        {
+            var audioFiles = chatEntry.Audio;
+            if (audioFiles == null || audioFiles.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var audioFile in audioFiles)
+            {
+                CopyFile(audioFile);
+                CopiedAudio++;
+            }
+        }
+    }
+
+    private void CopyChatFiles(ICollection<ChatEntry> chatEntries)
+    {
+        foreach(var chatEntry in chatEntries)
+        {
+            var files = chatEntry.Files;
+            if (files == null || files.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var file in files)
+            {
+                CopyFile(file);
+                CopiedFiles++;
+            }
+        }
+    }
+
     private void CopyFile(ILocatedFile file)
     {
         // Ensure file is not using a Cached file (stored on Facebook CDN servers)
@@ -136,6 +181,12 @@ public class FacebookCopier : IFacebookCopier
                 case "Photo":
                     photoPathExtension = ".jpg";
                     break;
+                default:
+                    if (fileUri.Split("\\").Last().Contains("image"))
+                    {
+                        photoPathExtension = ".jpg";
+                    }
+                    break;
             }
         }
         
@@ -143,8 +194,8 @@ public class FacebookCopier : IFacebookCopier
         FileWriter.Copy(photoPath, newFilePath);
         
         var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(file.CreateTimestamp).LocalDateTime;
-        File.SetCreationTime(newFilePath, dateTimeCreated);
-        File.SetLastWriteTime(newFilePath, DateTime.Now);
+        System.IO.File.SetCreationTime(newFilePath, dateTimeCreated);
+        System.IO.File.SetLastWriteTime(newFilePath, DateTime.Now);
         CopiedVideos++;
     }
 
