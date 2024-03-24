@@ -4,8 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
+/// <summary>
+/// Service for copying facebook files from one directory to another and applying dates to the copied files based on the received dates
+/// </summary>
 public class FacebookCopier : IFacebookCopier
 {
     public int CopiedAudio { get; private set; } = 0;
@@ -19,18 +21,30 @@ public class FacebookCopier : IFacebookCopier
 
     private static string relativePostPath = @"your_facebook_activity\posts\" ;
 
+    /// <summary>
+    /// Constructor for the FacebookCopier service: requires the root path of the Facebook download and the path where files should be copied to
+    /// </summary>
+    /// <param name="rootPath">Root path of the Facebook download folder</param>
+    /// <param name="photoTargetPath">Path to the photo copy location; this does not need to exist already, however, it must be empty if it does exist</param>
     public FacebookCopier(string rootPath, string photoTargetPath)
     {
         this.rootPath = rootPath;
+        if (rootPath.Last() != '\\')
+        {
+            this.rootPath += "\\";
+        }
         this.photoTargetPath = photoTargetPath;
+        if (photoTargetPath.Last() != '\\')
+        {
+            this.photoTargetPath += "\\";
+        }
 
-        // DEBUG
-        this.rootPath = @"C:\Users\Dylan\Downloads\Facebook Attempt 2\";
-        this.photoTargetPath = @"C:\Users\Dylan\Downloads\Facebook Photos\";
-
-        //Helpers.GetOrCreateEmptyDirectory(photoTargetPath);
+        Helpers.CreateEmptyDirectory(photoTargetPath);
     }
 
+    /// <summary>
+    /// Run the copier service
+    /// </summary>
     public void Copy()
     {
         CopyPostMedia();
@@ -92,11 +106,7 @@ public class FacebookCopier : IFacebookCopier
     private void CopyPost(Post post)
     {
         var postText = post.PostData.Select(pd => pd.Text).FirstOrDefault(t => !string.IsNullOrEmpty(t));
-        var postName = !string.IsNullOrEmpty(postText)
-            ? Regex.Replace(postText, "[^\x00-\x7F]+", "").Replace("\n", " ").Replace("?", " ").Length > 50 
-                ? Regex.Replace(postText, "[^\x00-\x7F]+", "").Replace("\n", " ").Replace("?", " ").Substring(0, 50)
-                : Regex.Replace(postText, "[^\x00-\x7F]+", "").Replace("\n", " ").Replace("?", " ")
-            : null;
+        var postName = Helpers.GetValidDirectoryName(postText);
         var postAttachments = post.PostAttachments;
         if (postAttachments == null)
         {
@@ -308,11 +318,37 @@ public class FacebookCopier : IFacebookCopier
 
     private void CopyFile(string fromPath, string toPath, long createTimestamp)
     {
-        FileWriter.Copy(fromPath, toPath);
+        var fileExists = System.IO.File.Exists(fromPath);
+        if (!fileExists)
+        {
+            throw new FileNotFoundException("File does not exist");
+        }
+
+        var fileType = Path.GetExtension(toPath);
+        var newFilePathWithoutExtension = toPath.Replace(fileType, "");
+        if (System.IO.File.Exists(toPath))
+        {
+            var existsIteration = 1;
+            while (System.IO.File.Exists(newFilePathWithoutExtension + $" ({existsIteration})" + fileType))
+            {
+                existsIteration++;
+            }
+            newFilePathWithoutExtension += $" ({existsIteration})";
+        }
+        var newFilePath = newFilePathWithoutExtension + Path.GetExtension(toPath);
+
+        var newFileDirectory = newFilePath.Split(Path.GetFileName(newFilePath))[0].Split("/")[0];
+        var directoryExists = Directory.Exists(newFileDirectory);
+        if (!directoryExists)
+        {
+            Directory.CreateDirectory(newFileDirectory);
+        }
+
+        System.IO.File.Copy(fromPath, newFilePath);
         
         var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(createTimestamp).LocalDateTime;
-        System.IO.File.SetCreationTime(toPath, dateTimeCreated);
-        System.IO.File.SetLastWriteTime(toPath, DateTime.Now);
+        System.IO.File.SetCreationTime(newFilePath, dateTimeCreated);
+        System.IO.File.SetLastWriteTime(newFilePath, DateTime.Now);
     }
     
     private string GetCopiedFileTargetPath(PostMediaAttachment postMediaAttachment, string postName, string fileType)
