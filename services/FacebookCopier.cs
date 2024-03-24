@@ -34,7 +34,7 @@ public class FacebookCopier : IFacebookCopier
     public void Copy()
     {
         CopyPostMedia();
-        //CopyChatMedia();
+        CopyChatMedia();
     }
 
     #region Copy Posts
@@ -42,12 +42,50 @@ public class FacebookCopier : IFacebookCopier
     private void CopyPostMedia()
     {
         Console.Output("Reading post folders");
-        var postsFilePath = Directory.GetFiles(rootPath + relativePostPath, "your_posts__check_ins__photos_and_videos_1.json").First();
-        var postJson = System.IO.File.ReadAllText(postsFilePath);
-        var posts = JsonSerializer.Deserialize<List<Post>>(postJson);
-        foreach (var post in posts)
+        var postsFilePaths = Directory.GetFiles(rootPath + relativePostPath, "*.json");
+
+        foreach (var postsFilePath in postsFilePaths)
         {
-            CopyPost(post);
+            var postsFileName = Path.GetFileNameWithoutExtension(postsFilePath);
+            if (postsFileName == "your_posts__check_ins__photos_and_videos_1")
+            {
+                var postJson = System.IO.File.ReadAllText(postsFilePath);
+                var posts = JsonSerializer.Deserialize<List<Post>>(postJson);
+                foreach (var post in posts)
+                {
+                    CopyPost(post);
+                }
+            }
+            else if (postsFileName == "archive")
+            {
+                var archiveJson = System.IO.File.ReadAllText(postsFilePath);
+                var archive = JsonSerializer.Deserialize<Archive>(archiveJson);
+
+                foreach (var archivedPost in archive.ArchivedPosts)
+                {
+                    CopyPost(archivedPost);
+                }
+            }
+            else if (postsFileName == "your_videos")
+            {
+                var archiveJson = System.IO.File.ReadAllText(postsFilePath);
+                var archive = JsonSerializer.Deserialize<Videos>(archiveJson);
+
+                foreach (var archivedPost in archive.ArchivedPosts)
+                {
+                    CopyFile(archivedPost, null, null);
+                }
+            }
+            else if (postsFileName == "your_uncategorized_photos")
+            {
+                var archiveJson = System.IO.File.ReadAllText(postsFilePath);
+                var archive = JsonSerializer.Deserialize<UncategorizedPhotos>(archiveJson);
+
+                foreach (var archivedPost in archive.OtherPhotos)
+                {
+                    CopyFile(archivedPost, null, null);
+                }
+            }
         }
     }
 
