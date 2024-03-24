@@ -42,13 +42,16 @@ public class FacebookCopier : IFacebookCopier
 
         Console.Output($"{numberOfChats} chat folders found.");
         Console.Output($"0% Completed (0 out of {numberOfChats})");
+        var lastPercentOutput = 0;
         for (int i = 0; i < numberOfChats; i++)
         {
             CopyFromChat(chats.ElementAt(i));
             
-            var percentCompleted = (i + 1) / numberOfChats * 100;
-            if (percentCompleted % 10 == 0)
+            var percentCompleted = (int)((i + 1) / numberOfChats * 100);
+            var interval = percentCompleted % 10;
+            if (interval == 0 &&  percentCompleted != lastPercentOutput)
             {
+                lastPercentOutput = percentCompleted;
                 Console.Output($"{percentCompleted}% Completed ({i + 1} out of {numberOfChats})");
             }
         }
