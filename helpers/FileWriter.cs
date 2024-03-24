@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 
 public class FileWriter
 {
@@ -23,7 +24,7 @@ public class FileWriter
         }
         var newFilePath = newFilePathWithoutExtension + Path.GetExtension(destinationPath);
 
-        var newFileDirectory = newFilePath.Split(Path.GetFileName(newFilePath))[0];
+        var newFileDirectory = newFilePath.Split(Path.GetFileName(newFilePath))[0].Split("/")[0];
         var directoryExists = Directory.Exists(newFileDirectory);
         if (!directoryExists)
         {

@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 public class FacebookCopier : IFacebookCopier
 {
@@ -15,6 +17,8 @@ public class FacebookCopier : IFacebookCopier
     private static string[] relativeActivityPaths = new string[] { @"your_activity_across_facebook\", @"your_facebook_activity\" };
     private static string[] relativeChatFolderPaths = new string[] { @"messages\inbox\", @"messages\filtered_threads\", @"messages\message_requests\", @"messages\archived_threads\" };
 
+    private static string relativePostPath = @"your_facebook_activity\posts\" ;
+
     public FacebookCopier(string rootPath, string photoTargetPath)
     {
         this.rootPath = rootPath;
@@ -24,15 +28,111 @@ public class FacebookCopier : IFacebookCopier
         this.rootPath = @"C:\Users\Dylan\Downloads\Facebook Attempt 2\";
         this.photoTargetPath = @"C:\Users\Dylan\Downloads\Facebook Photos\";
 
-        Helpers.GetOrCreateEmptyDirectory(photoTargetPath);
+        //Helpers.GetOrCreateEmptyDirectory(photoTargetPath);
     }
-
-
 
     public void Copy()
     {
-        CopyChatMedia();
+        CopyPostMedia();
+        //CopyChatMedia();
     }
+
+    #region Copy Posts
+
+    private void CopyPostMedia()
+    {
+        Console.Output("Reading post folders");
+        var postsFilePath = Directory.GetFiles(rootPath + relativePostPath, "your_posts__check_ins__photos_and_videos_1.json").First();
+        var postJson = System.IO.File.ReadAllText(postsFilePath);
+        var posts = JsonSerializer.Deserialize<List<Post>>(postJson);
+        foreach (var post in posts)
+        {
+            CopyPost(post);
+        }
+    }
+
+    private void CopyPost(Post post)
+    {
+        var postText = post.PostData.Select(pd => pd.Text).FirstOrDefault(t => !string.IsNullOrEmpty(t));
+        var postName = !string.IsNullOrEmpty(postText)
+            ? Regex.Replace(postText, "[^\x00-\x7F]+", "").Replace("\n", " ").Replace("?", " ").Length > 50 
+                ? Regex.Replace(postText, "[^\x00-\x7F]+", "").Replace("\n", " ").Replace("?", " ").Substring(0, 50)
+                : Regex.Replace(postText, "[^\x00-\x7F]+", "").Replace("\n", " ").Replace("?", " ")
+            : null;
+        var postAttachments = post.PostAttachments;
+        if (postAttachments == null)
+        {
+            return;
+        }
+
+        foreach (var postAttachment in postAttachments)
+        {
+            var postMediaAttachments = postAttachment.PostMediaAttachments;
+            if (postMediaAttachments == null)
+            {
+                continue;
+            }
+
+            foreach (var postMediaAttachment in postMediaAttachments)
+            {
+                var postMediaAttachmentMedia = postMediaAttachment.PostMediaAttachments;
+                if (postMediaAttachmentMedia == null)
+                {
+                    continue;
+                }
+                
+                CopyFile(postMediaAttachmentMedia, postName, postText);
+            }
+        }
+    }
+    
+    private void CopyFile(PostMediaAttachment file, string postName, string postText)
+    {
+        // Ensure file is not using a Cached file (stored on Facebook CDN servers)
+        if (!((ILocatedFile)file).IsLocalFile())
+        {
+            return;
+        }
+
+        // If file is missing an extension: add one on based on the type passed in
+        var fileUri = file.URI.Replace("/", "\\");
+        var photoPath = rootPath + fileUri;
+        var photoPathExtension = Path.GetExtension(photoPath);
+        
+        var newFilePath = GetCopiedFileTargetPath(file, postName, photoPathExtension);
+        CopyFile(photoPath, newFilePath, file.CreateTimestamp);
+        
+
+        var directoryPath = Path.GetDirectoryName(newFilePath);
+        if (!string.IsNullOrEmpty(postText))
+        {
+            CreateTextFile(directoryPath, postText);
+        }
+
+        var metadata = file.Metadata;
+        if (metadata.VideoMetadata != null)
+        {
+            CopiedVideos++;
+        }
+
+        if (metadata.PhotoMetadata != null)
+        {
+            CopiedPhotos++;
+        }
+    }
+
+    private void CreateTextFile(string path, string text)
+    {
+        var textFilePath = path + "\\post.txt";
+        var createdFile = System.IO.File.Create(textFilePath);
+        var encodedText = new UnicodeEncoding().GetBytes(text);
+        createdFile.Write(encodedText);
+        createdFile.Close();
+    }
+
+    #endregion
+
+    #region Copy Chats
 
     private void CopyChatMedia()
     {
@@ -63,7 +163,7 @@ public class FacebookCopier : IFacebookCopier
         foreach (var chatPath in chatPaths)
         {
             var chatJson = System.IO.File.ReadAllText(chatPath);
-            var chatFile = JsonSerializer.Deserialize<ChatFile>(chatJson);
+            var chatFile = System.Text.Json.JsonSerializer.Deserialize<ChatFile>(chatJson);
 
             CopyChatMedia(chatFile);
         }
@@ -126,7 +226,7 @@ public class FacebookCopier : IFacebookCopier
             CopyFile(file, ref counter);
         }
     }
-
+    
     private void CopyFile(ILocatedFile file, ref int counter)
     {
         // Ensure file is not using a Cached file (stored on Facebook CDN servers)
@@ -159,24 +259,56 @@ public class FacebookCopier : IFacebookCopier
             }
         }
         
-        var newFilePath = GetCopiedFileTargetPath(file.CreateTimestamp, photoPathExtension);
-        FileWriter.Copy(photoPath, newFilePath);
-        
-        var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(file.CreateTimestamp).LocalDateTime;
-        System.IO.File.SetCreationTime(newFilePath, dateTimeCreated);
-        System.IO.File.SetLastWriteTime(newFilePath, DateTime.Now);
+        var newFilePath = GetCopiedFileTargetPath(file, photoPathExtension);
+        CopyFile(photoPath, newFilePath, file.CreateTimestamp);
         counter++;
     }
 
-    private string GetCopiedFileTargetPath(long createTimestamp_s, string fileType)
+    #endregion
+
+    #region Helpers
+
+    private void CopyFile(string fromPath, string toPath, long createTimestamp)
+    {
+        FileWriter.Copy(fromPath, toPath);
+        
+        var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(createTimestamp).LocalDateTime;
+        System.IO.File.SetCreationTime(toPath, dateTimeCreated);
+        System.IO.File.SetLastWriteTime(toPath, DateTime.Now);
+    }
+    
+    private string GetCopiedFileTargetPath(PostMediaAttachment postMediaAttachment, string postName, string fileType)
+    {
+        var newFilePath = photoTargetPath;
+        
+        var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(postMediaAttachment.CreateTimestamp).LocalDateTime;
+        newFilePath += dateTimeCreated.ToString("yyyy") + "\\";
+
+        newFilePath += string.IsNullOrEmpty(postMediaAttachment.Title)
+            ? "posts\\"
+            : $"albums\\{postMediaAttachment.Title}\\";
+
+        if (!string.IsNullOrEmpty(postName))
+        {
+            newFilePath += postName + "\\";
+        }
+
+        newFilePath += dateTimeCreated.ToString("yyyy-MM-dd");
+
+        return newFilePath + " (Facebook)" + fileType;
+    }
+
+    private string GetCopiedFileTargetPath(ILocatedFile locatedFile, string fileType)
     {
         var newFilePath = photoTargetPath;
 
-        var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(createTimestamp_s).LocalDateTime;
+        var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(locatedFile.CreateTimestamp).LocalDateTime;
         newFilePath += dateTimeCreated.ToString("yyyy") + "\\";
 
         newFilePath += dateTimeCreated.ToString("yyyy-MM-dd");
 
         return newFilePath + " (Facebook)" + fileType;
     }
+
+    #endregion
 }
