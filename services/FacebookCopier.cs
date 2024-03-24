@@ -59,112 +59,78 @@ public class FacebookCopier : IFacebookCopier
 
     private void CopyFromChat(string chatDir)
     {
-        var chatJsonFiles = Directory.GetFiles(chatDir, "*.json", SearchOption.AllDirectories);
-        foreach (var chatJsonFile in chatJsonFiles)
+        var chatPaths = Directory.GetFiles(chatDir, "*.json", SearchOption.AllDirectories);
+        foreach (var chatPath in chatPaths)
         {
-            CopyFromChatJsonFile(chatJsonFile);
+            var chatJson = System.IO.File.ReadAllText(chatPath);
+            var chatFile = JsonSerializer.Deserialize<ChatFile>(chatJson);
+
+            CopyChatMedia(chatFile);
         }
     }
-
-    private void CopyFromChatJsonFile(string chatJsonFilePath)
+    private void CopyChatMedia(ChatFile chatFile)
     {
-        var chatJsonString = System.IO.File.ReadAllText(chatJsonFilePath);
-        var chatJson = JsonSerializer.Deserialize<ChatFile>(chatJsonString);
-
-        var chatPhoto = chatJson.Image;
+        var chatPhoto = chatFile.Image;
         if (chatPhoto != null)
         {
-            CopyFile(chatPhoto);
-            CopiedPhotos++;
+            var copiedPhotos = CopiedPhotos;
+            CopyFile(chatPhoto, ref copiedPhotos);
+            CopiedPhotos = copiedPhotos;
         }
 
-
-        CopyChatPhotos(chatJson.Messages);
-        CopyChatVideos(chatJson.Messages);
-        CopyChatAudio(chatJson.Messages);
-        CopyChatFiles(chatJson.Messages);
-    }
-
-    private void CopyChatPhotos(ICollection<ChatEntry> chatEntries)
-    {
-        var chatsWithPhotos = chatEntries
-            .Where(m => m.Photos != null && m.Photos.Count > 0)
-            .ToList();
-        
-        foreach (var chatWithPhotos in chatsWithPhotos)
+        foreach (var message in chatFile.Messages)
         {
-            var chatPhotos = chatWithPhotos.Photos;
-            foreach (var chatPhoto in chatPhotos)
-            {
-                // If the photo URI is accessing Facebook's CDN: skip
-                if (chatPhoto.URI.StartsWith("https:"))
-                {
-                    continue;
-                }
-                CopyFile(chatPhoto);
-                CopiedPhotos++;
-            }
+            CopyChatMedia(message);
         }
     }
 
-    private void CopyChatVideos(ICollection<ChatEntry> chatEntries)
+    private void CopyChatMedia(ChatEntry chatEntry)
     {
-        foreach(var chatEntry in chatEntries)
+        var audio = chatEntry.Audio;
+        if (audio != null)
         {
-            var videos = chatEntry.Videos;
-            if (videos == null || videos.Count == 0)
-            {
-                continue;
-            }
+            var copiedAudio = CopiedAudio;
+            CopyFile(audio.Cast<ILocatedFile>().ToList(), ref copiedAudio);
+            CopiedAudio = copiedAudio;
+        }
 
-            foreach (var video in videos)
-            {
-                CopyFile(video);
-                CopiedVideos++;
-            }
+        var files = chatEntry.Files;
+        if (files != null)
+        {
+            var copiedFiles = CopiedFiles;
+            CopyFile(files.Cast<ILocatedFile>().ToList(), ref copiedFiles);
+            CopiedFiles = copiedFiles;
+        }
+
+        var photos = chatEntry.Photos;
+        if (photos != null)
+        {
+            var copiedPhotos = CopiedPhotos;
+            CopyFile(photos.Cast<ILocatedFile>().ToList(), ref copiedPhotos);
+            CopiedPhotos = copiedPhotos;
+        }
+
+        var videos = chatEntry.Videos;
+        if (videos != null)
+        {
+            var copiedVideos = CopiedVideos;
+            CopyFile(videos.Cast<ILocatedFile>().ToList(), ref copiedVideos);
+            CopiedVideos = copiedVideos;
         }
     }
 
-    private void CopyChatAudio(ICollection<ChatEntry> chatEntries)
+    private void CopyFile(List<ILocatedFile> files, ref int counter)
     {
-        foreach(var chatEntry in chatEntries)
+        foreach (var file in files)
         {
-            var audioFiles = chatEntry.Audio;
-            if (audioFiles == null || audioFiles.Count == 0)
-            {
-                continue;
-            }
-
-            foreach (var audioFile in audioFiles)
-            {
-                CopyFile(audioFile);
-                CopiedAudio++;
-            }
+            CopyFile(file, ref counter);
         }
     }
 
-    private void CopyChatFiles(ICollection<ChatEntry> chatEntries)
-    {
-        foreach(var chatEntry in chatEntries)
-        {
-            var files = chatEntry.Files;
-            if (files == null || files.Count == 0)
-            {
-                continue;
-            }
-
-            foreach (var file in files)
-            {
-                CopyFile(file);
-                CopiedFiles++;
-            }
-        }
-    }
-
-    private void CopyFile(ILocatedFile file)
+    private void CopyFile(ILocatedFile file, ref int counter)
     {
         // Ensure file is not using a Cached file (stored on Facebook CDN servers)
-        if (!IsLocalFile(file.URI))
+        if (!file.IsLocalFile())
         {
             return;
         }
@@ -199,12 +165,7 @@ public class FacebookCopier : IFacebookCopier
         var dateTimeCreated = DateTimeOffset.FromUnixTimeSeconds(file.CreateTimestamp).LocalDateTime;
         System.IO.File.SetCreationTime(newFilePath, dateTimeCreated);
         System.IO.File.SetLastWriteTime(newFilePath, DateTime.Now);
-        CopiedVideos++;
-    }
-
-    private bool IsLocalFile (string fileUri)
-    {
-        return !fileUri.StartsWith("https");
+        counter++;
     }
 
     private string GetCopiedFileTargetPath(long createTimestamp_s, string fileType)
